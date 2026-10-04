@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, orientation=portrait">
+    <title>Cosmic Runner — Dodge the Asteroids</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: 'Arial', sans-serif;
+            touch-action: none;
+            user-select: none;
+        }
+        #canvas { display: block; }
+        #hud {
+            position: fixed;
+            top: 12px; left: 12px;
+            color: #0ff;
+            font-size: 18px;
+            text-shadow: 0 0 8px #0ff;
+            z-index: 100;
+            pointer-events: none;
+        }
+        #score {
+            font-size: 32px;
+            font-weight: bold;
+            color: #ff0;
+            text-shadow: 0 0 12px #ff0;
+            letter-spacing: 2px;
+        }
+        #lives {
+            margin-top: 6px;
+            font-size: 20px;
+            letter-spacing: 2px;
+        }
+        #speed {
+            position: fixed;
+            top: 12px; right: 12px;
+            color: #f0f;
+            font-size: 14px;
+            text-shadow: 0 0 8px #f0f;
+            z-index: 100;
+        }
+        #game-over {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 38px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 200;
+            display: none;
+            text-shadow: 0 0 20px #f00, 0 0 40px #f00;
+            pointer-events: none;
+        }
+        #final-score {
+            color: #ff0;
+            font-size: 28px;
+            text-shadow: 0 0 15px #ff0;
+        }
+        #restart-btn {
+            margin-top: 20px;
+            padding: 14px 32px;
+            font-size: 22px;
+            background: linear-gradient(135deg, #f44, #a00);
+            color: #fff;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            pointer-events: auto;
+            font-weight: bold;
+            box-shadow: 0 0 20px #f44;
+            text-shadow: 0 1px 2px #000;
+        }
+        #restart-btn:active { transform: scale(0.95); }
+        #controls-hint {
+            position: fixed;
+            bottom: 12px; left: 50%;
+            transform: translateX(-50%);
+            color: rgba(0,255,200,0.6);
+            font-size: 13px;
+            text-shadow: 0 0 6px #0fc;
+            z-index: 100;
+            text-align: center;
+            white-space: nowrap;
+        }
+        #start-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,10,0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+            cursor: pointer;
+        }
+        #start-screen h1 {
+            color: #0ff;
+            font-size: 42px;
+            text-shadow: 0 0 20px #0ff;
+            margin-bottom: 20px;
+        }
+        #start-screen p {
+            color: #aaa;
+            margin: 8px 0;
+            font-size: 16px;
+        }
+        #start-btn {
+            margin-top: 30px;
+            padding: 16px 40px;
+            font-size: 24px;
+            background: linear-gradient(135deg, #0f8, #08a);
+            color: #fff;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 0 25px #0f8;
+        }
+        @media (max-width: 768px) {
+            #score { font-size: 24px; }
+            #lives { font-size: 18px; }
+            #start-screen h1 { font-size: 28px; }
+            #game-over { font-size: 28px; }
+            #controls-hint { font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="hud">
+        <div id="score">0</div>
+        <div id="lives">❤️ ❤️ ❤️</div>
+    </div>
+    <div id="speed">SPEED: 1.0x</div>
+    <div id="game-over">
+        GAME OVER<br>
+        <span id="final-score">0</span><br>
+        <button id="restart-btn">RESTART</button>
+    </div>
+    <div id="start-screen">
+        <h1>🚀 COSMIC RUNNER</h1>
+        <p>Dodge asteroids. Survive. Score.</p>
+        <p>Swipe / Tilt to move</p>
+        <button id="start-btn">PLAY</button>
+    </div>
+    <div id="controls-hint">SWIPE to move / Tap to start</div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000010);
+        scene.fog = new THREE.Fog(0x000010, 20, 80);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1, 8);
+        camera.lookAt(0, 0, -20);
+
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        // Lighting
+        const ambient = new THREE.AmbientLight(0x334466, 0.6);
+        scene.add(ambient);
+        const point = new THREE.PointLight(0xffaa00, 5, 30);
+        scene.add(point);
+
+        // Stars
+        const starGeo = new THREE.BufferGeometry();
+        const starVerts = [];
+        for (let i = 0; i < 3000; i++) {
+            starVerts.push((Math.random()-0.5)*300, (Math.random()-0.5)*300, (Math.random()-0.5)*300);
+        }
+        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVerts, 3));
+        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.15, transparent: true, opacity: 0.9 });
+        const stars = new THREE.Points(starGeo, starMat);
+        scene.add(stars);
+
+        // Player ship — sleek, glowing
+        const shipGroup = new THREE.Group();
+        const bodyGeo = new THREE.ConeGeometry(0.35, 1.2, 4);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00aa88, emissiveIntensity: 0.6, flatShading: true });
+        const shipBody = new THREE.Mesh(bodyGeo, bodyMat);
+        shipBody.rotation.x = Math.PI / 2;
+        shipBody.castShadow = true;
+        shipGroup.add(shipBody);
+        // Cockpit
+        const cockMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff4400, emissiveIntensity: 0.8 });
+        const cockGeo = new THREE.SphereGeometry(0.18, 8, 8);
+        const cockpit = new THREE.Mesh(cockGeo, cockMat);
+        cockpit.position.set(0, 0.15, 0);
+        shipGroup.add(cockpit);
+        // Wings
+        const wingGeo = new THREE.BoxGeometry(1.0, 0.02, 0.35);
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x008866, emissiveIntensity: 0.3 });
+        const wingL = new THREE.Mesh(wingGeo, wingMat);
+        wingL.position.set(-0.6, 0.05, -0.25);
+        wingL.rotation.z = 0.15;
+        shipGroup.add(wingL);
+        const wingR = new THREE.Mesh(wingGeo, wingMat);
+        wingR.position.set(0.6, 0.05, -0.25);
+        wingR.rotation.z = -0.15;
+        shipGroup.add(wingR);
+        shipGroup.position.set(0, 0, 0);
+        scene.add(shipGroup);
+
+        // Asteroids
+        const asteroidMat = new THREE.MeshStandardMaterial({
+            color: 0x666666, emissive: 0x222222, emissiveIntensity: 0.4,
+            flatShading: true, what to do: 0.4, metalness: 0.1
+        });
+
+        const asteroids = [];
+        const ASTEROID_COUNT = 25;
+        const BASE_SPEED = 1.8;
+
+        function createAsteroid() {
+            const size = 0.3 + Math.random() * 0.5;
+            const sides = Math.floor(Math.random() * 3) + 5;
+            const geo = new THREE.DodecahedronGeometry(size, sides);
+            const asteroid = new THREE.Mesh(geo, asteroidMat);
+            asteroid.position.set(
+                (Math.random() - 0.5) * 14,
+                (Math.random() - 0.5) * 6,
+                -60 - Math.random() * 40
+            );
+            asteroid.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+            asteroid.spinX = Math.random() * 0.03;
+            asteroid.spinY = Math.random() * 0.03;
+            asteroid.speed = BASE_SPEED + Math.random() * 1.2;
+            asteroid.alive = true;
+            scene.add(asteroid);
+            asteroids.push(asteroid);
+        }
+
+        for (let i = 0; i < ASTEROID_COUNT; i++) createAsteroid();
+
+        // Score display
+        let scoreDisplay = document.getElementById('score');
+        let livesDisplay = document.getElementById('lives');
+        let speedDisplay = document.getElementById('speed');
+        let finalScoreEl = document.getElementById('final-score');
+        let gameOverEl = document.getElementById('game-over');
+        let startScreenEl = document.getElementById('start-screen');
+
+        function updateHUD() {
+            scoreDisplay.textContent = Math.floor(game.score);
+            livesDisplay.textContent = '❤️ '.repeat(game.lives).trim() || '💀';
+            speedDisplay.textContent = `SPEED: ${game.speed.toFixed(1)}x`;
+        }
+
+        // Game state
+        const game = {
+            score: 0,
+            lives: 3,
+            speed: 1.0,
+            speedTimer: 0,
+            active: false,
+            invulnerable: false,
+            invulnerableTime: 0
+        };
+
+        // Input
+        let targetX = 0;
+        let targetY = 0;
+
+        // Keyboard
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.key] = true);
+        window.addEventListener('keyup', e => keys[e.key] = false);
+
+        // Touch
+        const touch = { x: 0, y: 0, active: false };
+        const shipPos = { x: 0, y: 0 };
+
+        function onTouch(e) {
+            e.preventDefault();
+            if (game.active) {
+                const t = e.touches[0];
+                touch.x = t.clientX;
+                touch.y = t.clientY;
+                touch.active = true;
+            }
+        }
+        function onTouchMove(e) { onTouch(e); }
+        function onTouchEnd() {
+            touch.active = false;
+            if (!game.active) {
+                startGame();
+            }
+        }
+
+        window.addEventListener('touchstart', onTouch, { passive: false });
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onTouchEnd, { passive: false });
+        window.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+        // Mouse
+        window.addEventListener('mousemove', e => {
+            if (game.active) {
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                shipPos.x = ((e.clientX / w) - 0.5) * 14;
+                shipPos.y = -((e.clientY / h) - 0.5) * 6;
+            }
+        });
+        window.addEventListener('click', () => { if (!game.active) startGame(); });
+
+        // Start
+        document.getElementById('start-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            startGame();
+        });
+
+        function startGame() {
+            startScreenEl.style.display = 'none';
+            game.active = true;
+            game.score = 0;
+            game.lives = 3;
+            game.speed = 1.0;
+            game.invulnerable = false;
+            resetShip();
+            for (let a of asteroids) resetAsteroid(a);
+            updateHUD();
+        }
+
+        function resetShip() {
+            shipGroup.position.set(0, 0, 0);
+            shipPos.x = 0;
+            shipPos.y = 0;
+            targetX = 0;
+            targetY = 0;
+            shipGroup.visible = true;
+            shipGroup.traverse(c => c.visible = true);
+        }
+
+        function resetAsteroid(a) {
+            a.position.z = -60 - Math.random() * 40;
+            a.position.x = (Math.random() - 0.5) * 14;
+            a.position.y = (Math.random() - 0.5) * 6;
+            a.alive = true;
+            a.visible = true;
+        }
+
+        function gameOver() {
+            game.active = false;
+            finalScoreEl.textContent = Math.floor(game.score);
+            gameOverEl.style.display = 'block';
+        }
+
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            gameOverEl.style.display = 'none';
+            startGame();
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Loop
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+
+            if (!game.active) {
+                renderer.render(scene, camera);
+                return;
+            }
+
+            // Movement
+            if (touch.active) {
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                const normX = (touch.x / w) - 0.5;
+                const normY = (touch.y / h) - 0.5;
+                shipPos.x = normX * 14;
+                shipPos.y = -normY * 6;
+            } else {
+                if (keys['ArrowLeft'] || keys['a']) shipPos.x -= 0.15;
+                if (keys['ArrowRight'] || keys['d']) shipPos.x += 0.15;
+                if (keys['ArrowUp'] || keys['w']) shipPos.y += 0.15;
+                if (keys['ArrowDown'] || keys['s']) shipPos.y -= 0.15;
+                shipPos.x = Math.max(-7, Math.min(7, shipPos.x));
+                shipPos.y = Math.max(-3, Math.min(3, shipPos.y));
+            }
+
+            // Smooth ship movement
+            shipGroup.position.x += (shipPos.x - shipGroup.position.x) * 0.12;
+            shipGroup.position.y += (shipPos.y - shipGroup.position.y) * 0.12;
+            shipGroup.rotation.z = -shipGroup.position.x * 0.06;
+            shipGroup.rotation.x = shipGroup.position.y * 0.05;
+
+            // Speed up
+            game.speedTimer += dt;
+            if (game.speedTimer > 10) {
+                game.speed += 0.1;
+                game.speedTimer = 0;
+            }
+
+            // Invulnerability flash
+            if (game.invulnerable) {
+                const now = performance.now();
+                if (now - game.invulnerableTime < 1500) {
+                    shipGroup.visible = Math.floor(now / 80) % 2;
+                } else {
+                    game.invulnerable = false;
+                    shipGroup.visible = true;
+                }
+            }
+
+            // Asteroids
+            for (let a of asteroids) {
+                if (!a.alive) continue;
+
+                a.position.z += a.speed * game.speed * dt * 0.6;
+                a.rotation.x += a.spinX;
+                a.rotation.y += a.spinY;
+
+                // Respawn if passed
+                if (a.position.z > 12) {
+                    a.position.z = -60 - Math.random() * 40;
+                    a.position.x = (Math.random() - 0.5) * 14;
+                    a.position.y = (Math.random() - 0.5) * 6;
+                    a.speed = BASE_SPEED + Math.random() * 1.2 * game.speed;
+                    game.score += 5;
+                }
+
+                // Collision
+                if (!game.invulnerable) {
+                    const dist = a.position.distanceTo(shipGroup.position);
+                    const hitRadius = 1.1 * (a.geometry.parameters?.radius || 0.5);
+                    if (dist < hitRadius) {
+                        game.invulnerable = true;
+                        game.invulnerableTime = performance.now();
+                        game.lives--;
+                        updateHUD();
+                        a.alive = false;
+                        a.visible = false;
+                        setTimeout(() => { a.position.z = -60 - Math.random() * 40; a.alive = true; a.visible = true; }, 2000);
+
+                        if (game.lives <= 0) {
+                            gameOver();
+                            return;
+                        }
+                        // Flash red
+                        document.body.style.backgroundColor = '#f00';
+                        setTimeout(() => document.body.style.backgroundColor = '#000', 100);
+                        break;
+                    }
+                }
+            }
+
+            stars.rotation.z += dt * 0.02;
+            point.position.z = shipGroup.position.z + 3;
+            updateHUD();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
